@@ -1,0 +1,42 @@
+<%- include header.ejs %>
+<div class="container">
+    <% if(warn) { %>
+    <div class="alert alert-danger text-center" style="margin-bottom:20px;color:red;"><%= warn %></div>
+    <% } %>
+    <form class="col-sm-offset-4 col-sm-4 form-horizontal" role="form" method="post">
+        <fieldset>
+            <legend></legend>
+            <div class="panel panel-default">
+                <div class="panel-heading">
+                    <p class="text-center page-title">用户登录</p>
+                </div>
+                <div class="panel-body m15">
+                    <div class="form-group">
+                        <div class="input-group nav-login">
+                        <span class="input-group-addon">
+                        <span class="glyphicon glyphicon-user"></span>
+                        </span>
+                            <input type="text" class="form-control" name="username" placeholder="请输入用户名" required>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <div class="input-group nav-login">
+                        <span class="input-group-addon">
+                        <span class="glyphicon glyphicon-lock"></span>
+                        </span>
+                            <input type="password" class="form-control" name="password" placeholder="请输入密码" required>
+                        </div>
+                    </div>
+                    <div class="form-group text-center">
+                        <input class="text-center" type="checkbox" name="chRm">&nbsp;&nbsp; 一周免登录
+                    </div>
+                    <div class="form-group">
+                        <button type="submit" class="btn btn-primary col-lg-11 btn-left">登录</button>
+                    </div>
+                </div>
+            </div>
+        </fieldset>
+    </form>
+</div>
+<%- include footer.ejs %>
+<!--<div class="text-center page-title">用户登录</div>-->
