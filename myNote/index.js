@@ -66,7 +66,7 @@ app.get('/register', function (req, res) {
     if (req.session.user!=null){
         return res.render('index', {
             user: req.session.user,
-            title: '登录',
+            title: '已登录',
             warn:''
         });
     }
@@ -291,6 +291,67 @@ app.get('/detail', function (req, res) {
     });
 
 });
+
+app.get('/delete', function (req, res) {
+    console.log('删除指定笔记');
+    if (req.session.user == null) {
+        return res.redirect('/');
+    }
+    var getQuery = url.parse(req.url).query;
+    var id = querystring.parse(getQuery)['id'];
+    Note.remove({_id:id}, function (err, docs) {
+        if (err) {
+            console.log(err);
+            return res.redirect('/noteslist');
+        }
+        console.log(docs);
+        return res.redirect('/noteslist');
+    });
+});
+
+app.get('/update', function (req, res) {
+    console.log('修改笔记');
+    if (req.session.user == null) {
+        return res.redirect('/');
+    }
+    var getQuery = url.parse(req.url).query;
+    var id = querystring.parse(getQuery)['id'];
+    Note.findOne({_id:id}, function (err, note) {
+        if (err) {
+            console.log(err);
+            return res.redirect('/noteslist');
+        }
+        console.log('----------'+note);
+        //note.createTime = moment(note.createTime).format("YYYY-MM-DD");
+        return res.render('update', {
+            user: req.session.user,
+            note: note,
+            title: '修改笔记',
+            moment:moment
+        });
+    });
+});
+
+app.post('/update', function (req, res) {
+    console.log('修改笔记');
+    if (req.session.user == null) {
+        return res.redirect('/');
+    }
+
+    Note.update({_id:req.body.id},{
+        $set:{title: req.body.title, tag:req.body.tag, content:req.body.content, createTime:req.body.createTime}
+    }, function (err) {
+        if (err) {
+            console.log(err);
+        }
+        console.log('更新成功');
+        return res.redirect('/noteslist');
+
+    });
+
+
+});
+
 
 app.get('/noteslist', function (req, res) {
     console.log('查看笔记列表');
