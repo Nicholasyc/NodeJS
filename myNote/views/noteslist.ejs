@@ -55,7 +55,7 @@
                         </td>
                         <td><%= notes[i].author %></td>
 
-                        <td><%= moment(notes[i].createTime).locale('zh-cn').format('LL HH:mm:ss') %></td>
+                        <td><%= moment(notes[i].createtime).locale('zh-cn').format('LL HH:mm:ss') %></td>
 
                         <td class="hidden-480">
                             <span class="label label-sm label-info arrowed arrowed-righ"><%= notes[i].tag %></span>
@@ -67,11 +67,11 @@
                                     <i class="ace-icon fa fa-search-plus bigger-130"></i>
                                 </a>
 
-                                <a class="green" href="/update?id=<%= notes[i]._id %>">
+                                <a class="green" href="/update?id=<%= notes[i].id %>">
                                     <i class="ace-icon fa fa-pencil bigger-130"></i>
                                 </a>
 
-                                <a class="red" href="/delete?id=<%= notes[i]._id %>">
+                                <a class="red" href="/delete?id=<%= notes[i].id %>">
                                     <i class="ace-icon fa fa-trash-o bigger-130"></i>
                                 </a>
                             </div>
