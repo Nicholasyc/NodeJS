@@ -10,31 +10,12 @@ var crypto = require('crypto');
 var session = require('express-session');
 var querystring = require('querystring'),
     url = require('url');
-// npm install --save moment ， save 要放在 moment 前面
+
 var moment = require('moment');
 
 var stringTest = require('./stringTest');
-var mysqlTools = require('./mysqlTools');
 
-var mysql = require('mysql');
-var pool = mysql.createPool({
-    connectionLimit: 10,
-    host: 'localhost',
-    user: 'mynote',
-    password: '12345',
-    database: 'mynote'
-});
-
-//引入 mongoose
-var mongoose = require('mongoose');
-//引入模型
-var models = require('./models/models');
-var User = models.User;
-var Note = models.Note;
-
-//使用 mongoose 连接服务
-mongoose.connect('mongodb://localhost:27017/notes');
-mongoose.connection.on('error', console.error.bind(console, '链接数据库失败'));
+var waterline = require('./waterline');
 
 //创建 express 实例
 var app = express();
@@ -58,6 +39,12 @@ app.use(session({
     resave: false,
     saveUninitialized: true
 }));
+
+//编写中间件 方便使用waterline 的 models
+app.use(function (req, res, next) {
+    req.models = app.get('models');
+    next();
+});
 
 
 //响应首页 get 请求
@@ -133,98 +120,44 @@ app.post('/register', function (req, res) {
         });
     }
 
-    pool.getConnection(function (err, connection) {
-        if (err) throw err;
-
-        connection.query('select * from user where username=?', username,
-            function (err, results, fields) {
-                if (err) throw err;
-                console.log('results' + results);
-                console.log('fields' + fields);
-                connection.release();
-                if (ret) {
-                    console.log('用户已存在');
-                    return res.render('register', {
-                        user: req.session.user,
-                        title: '注册',
-                        warn: '用户名已存在'
-                    });
-                } else {
-                    //对密码进行 md5 加密
-                    var md5 = crypto.createHash('md5'),
-                        md5password = md5.update(password).digest('hex');
-
-                    //新建 user 对象用于保存数据
-                    var user = {
-                        username: username,
-                        password: md5password,
-                        createTime: Date.now()
-                    };
-                    pool.getConnection(function (err, connection) {
-                        if (err) throw err;
-                        console.log(user);
-                        var params = [user.username, user.password];
-                        var query = connection.query('insert into user(username,password,createtime) values' +
-                            '(?,?,NOW())', params, function (err, result) {
-                            if (err) {
-                                console.log(err);
-                                console.log(query.sql);
-                                connection.release();
-                            }
-                            console.log('注册成功！');
-                            req.session.user = user;
-                            return res.render('index', {
-                                user: req.session.user,
-                                title: '注册'
-                            });
-
-                        });
-                    });
-                }
-
+    req.models.user.findOne({username:username}).exec(function (err, user) {
+        if (err) {
+            console.log(err);
+            return res.redirect('/register');
+        }
+        if (user) {
+            console.log('用户名已存在');
+            return res.render('register',{
+                user: req.session.user,
+                title: '注册',
+                warn:'用户名已存在'
             });
+        }
+
+        //对密码进行 md5 加密
+        var md5 = crypto.createHash('md5'),
+            md5password = md5.update(password).digest('hex');
+
+        //新建 user 对象用于保存数据
+        var newUser = {
+            username: username,
+            password: md5password
+        };
+
+        req.models.user.create(newUser).exec(function (err, user) {
+            if(err){
+                console.log(err);
+                return res.redirect('/register');
+            }
+            console.log('注册成功！');
+            req.session.user = newUser;
+            return res.render('index',{
+                user: req.session.user,
+                title:'注册'
+            });
+        });
+
     });
-
-
-    //检查用户名是否已经存在，如果不存在，则保存该条记录
-    //User.findOne({username:username}, function (err, user) {
-    //    if (err) {
-    //        console.log(err);
-    //        return res.redirect('/register');
-    //    }
-    //    if (user) {
-    //        console.log('用户名已存在');
-    //        return res.render('register',{
-    //            user: req.session.user,
-    //            title: '注册',
-    //            warn:'用户名已存在'
-    //        });
-    //    }
-    //
-    //    //对密码进行 md5 加密
-    //    var md5 = crypto.createHash('md5'),
-    //        md5password = md5.update(password).digest('hex');
-    //
-    //    //新建 user 对象用于保存数据
-    //    var newUser = new User({
-    //        username: username,
-    //        password: md5password
-    //    });
-    //
-    //    newUser.save(function (err, doc) {
-    //        if(err){
-    //            console.log(err);
-    //            return res.redirect('/register');
-    //        }
-    //        console.log('注册成功！');
-    //        req.session.user = newUser;
-    //        return res.render('index',{
-    //            user: req.session.user,
-    //            title:'注册'
-    //        });
-    //    });
-    //
-    //});
 
 });
 
@@ -250,95 +183,47 @@ app.post('/login', function (req, res) {
         password = req.body.password,
         chRm = req.body.chRm;
 
-    pool.getConnection(function (err, connection) {
-        if (err) throw err;
-
-        connection.query('select * from user where username=?', username,
-            function (err, results, fields) {
-                if (err) throw err;
-                console.log('results' + results);
-                console.log('fields' + fields);
-                connection.release();
-                if (results.length == 0 || results == null) {
-                    console.log('用户不存在');
-                    return res.render('login', {
-                        user: req.session.user,
-                        title: '登录',
-                        warn: '用户不存在，请先注册'
-                    });
-                } else {
-                    //查询到的用户
-                    var user = results[0];
-                    //md5 加密
-                    var md5 = crypto.createHash('md5'),
-                        md5password = md5.update(password).digest('hex');
-
-                    if (user.password !== md5password) {
-                        console.log('密码错误');
-                        return res.render('login', {
-                            user: req.session.user,
-                            title: '登录',
-                            warn: '密码错误'
-                        });
-                    }
-
-                    console.log('登录成功');
-                    //一周免登录
-                    if (chRm) {
-                        req.session.cookie.maxAge = 1000 * 60 * 60 * 24 * 7;
-                    }
-                    user.password = null;
-                    //安全起见，将密码删除
-                    delete user.password;
-                    //req.session 是一个json格式的JavaScript对象，可以随意添加成员
-                    req.session.user = user;
-                    //req.session.cookie.user = user;
-                    return res.redirect('/noteslist');
-                }
+    req.models.user.findOne({username:username}).exec(function (err, user) {
+        if (err) {
+            console.log(err);
+            return res.redirect('/login');
+        }
+        if (!user) {
+            console.log('用户不存在');
+            return res.render('login', {
+                user: req.session.user,
+                title: '登录',
+                warn:'用户不存在，请先注册'
             });
+        }
+
+        //md5 加密
+        var md5 = crypto.createHash('md5'),
+            md5password = md5.update(password).digest('hex');
+
+        if (user.password !== md5password) {
+            console.log('密码错误');
+            return res.render('login', {
+                user: req.session.user,
+                title: '登录',
+                warn:'密码错误'
+            });
+        }
+
+        console.log('登录成功');
+        //一周免登录
+        if (chRm){
+            req.session.cookie.maxAge = 1000 * 60 * 60 * 24 * 7;
+        }
+        user.password = null;
+        //安全起见，将密码删除
+        delete user.password;
+        //req.session 是一个json格式的JavaScript对象，可以随意添加成员
+        req.session.user = user;
+        //req.session.cookie.user = user;
+        return res.redirect('/noteslist');
     });
 
-
-    //User.findOne({username:username}, function (err, user) {
-    //    if (err) {
-    //        console.log(err);
-    //        return res.redirect('/login');
-    //    }
-    //    if (!user) {
-    //        console.log('用户不存在');
-    //        return res.render('login', {
-    //            user: req.session.user,
-    //            title: '登录',
-    //            warn:'用户不存在，请先注册'
-    //        });
-    //    }
-    //
-    //    //md5 加密
-    //    var md5 = crypto.createHash('md5'),
-    //        md5password = md5.update(password).digest('hex');
-    //
-    //    if (user.password !== md5password) {
-    //        console.log('密码错误');
-    //        return res.render('login', {
-    //            user: req.session.user,
-    //            title: '登录',
-    //            warn:'密码错误'
-    //        });
-    //    }
-    //
-    //    console.log('登录成功');
-    //    //一周免登录
-    //    if (chRm){
-    //        req.session.cookie.maxAge = 1000 * 60 * 60 * 24 * 7;
-    //    }
-    //    user.password = null;
-    //    //安全起见，将密码删除
-    //    delete user.password;
-    //    //req.session 是一个json格式的JavaScript对象，可以随意添加成员
-    //    req.session.user = user;
-    //    //req.session.cookie.user = user;
-    //    return res.redirect('/noteslist');
-    //});
 });
 
 
@@ -360,43 +245,22 @@ app.get('/post', function (req, res) {
 });
 
 app.post('/post', function (req, res) {
-    //var note = new Note({
-    //    title: req.body.title,
-    //    author: req.session.user.username,
-    //    tag: req.body.tag,
-    //    content: req.body.content
-    //});
+
     var note = {
         title: req.body.title,
         author: req.session.user.username,
         tag: req.body.tag,
-        content: req.body.content,
-        createTime: Date.now()
+        content: req.body.content
     };
 
-    pool.getConnection(function (err, connection) {
-        if (err) throw err;
-        var sql = 'insert into note(title, author, tag, content, createtime) values(?,?,?,?,NOW())';
-        var params = [note.title, note.author, note.tag, note.content];
-        connection.query(sql,params, function (err, result) {
-            if (err) {
-                console.log(err);
-                connection.release();
-            }
-            connection.release();
-            console.log('发表文章成功');
-            return res.redirect('/noteslist');
-        });
+    req.models.note.create(note).exec(function (err, note) {
+        if (err) {
+            console.log(err);
+            return res.redirect('/post');
+        }
+        console.log('发表文章成功');
+        return res.redirect('/');
     });
-
-    //note.save(function (err, doc) {
-    //    if (err) {
-    //        console.log(err);
-    //        return res.redirect('/post');
-    //    }
-    //    console.log('发表文章成功');
-    //    return res.redirect('/');
-    //});
 
 });
 
@@ -413,41 +277,20 @@ app.get('/detail', function (req, res) {
         author: req.session.user.username,
         title: title
     };
-    pool.getConnection(function (err, connection) {
-        if (err) throw err;
-        var sql = 'select * from note where author=? and title=?';
-        var params = [info.author, info.title];
-        connection.query(sql, params, function (err, ret) {
-            if (err) {
-                console.log(err);
-                connection.release();
-            }
-            console.log(info.author+' '+info.title+' '+ret[0]);
-            connection.release();
-            return res.render('detail', {
-                user: req.session.user,
-                note: ret[0],
-                title: '查看笔记列表',
-                moment: moment
-            });
+
+    req.models.note.findOne(info).exec(function (err, note) {
+        if (err) {
+            console.log(err);
+            return res.redirect('/noteslist');
+        }
+
+        return res.render('detail', {
+            user: req.session.user,
+            note: note,
+            title: '查看笔记列表',
+            moment:moment
         });
     });
-
-
-    //Note.findOne({author: req.session.user.username, title: title}, function (err, note) {
-    //    if (err) {
-    //        console.log(err);
-    //        return res.redirect('/noteslist');
-    //    }
-    //    console.log('----------'+note);
-    //    //note.createTime = moment(note.createTime).format("YYYY-MM-DD");
-    //    return res.render('detail', {
-    //        user: req.session.user,
-    //        note: note,
-    //        title: '查看笔记列表',
-    //        moment:moment
-    //    });
-    //});
 
 });
 
@@ -459,27 +302,14 @@ app.get('/delete', function (req, res) {
     var getQuery = url.parse(req.url).query;
     var id = querystring.parse(getQuery)['id'];
 
-    pool.getConnection(function (err, connection) {
-        if (err) throw err;
-        var sql = 'delete from note where id=?';
-        connection.query(sql, id, function (err, ret) {
-            if (err) {
-                console.log(err);
-                connection.release();
-                return res.redirect('/noteslist');
-            }
+    req.models.note.destroy({id:id}).exec(function (err) {
+        if (err) {
+            console.log(err);
             return res.redirect('/noteslist');
-        });
+        }
+        return res.redirect('/noteslist');
     });
 
-    //Note.remove({_id: id}, function (err, docs) {
-    //    if (err) {
-    //        console.log(err);
-    //        return res.redirect('/noteslist');
-    //    }
-    //    console.log(docs);
-    //    return res.redirect('/noteslist');
-    //});
 });
 
 app.get('/update', function (req, res) {
@@ -490,36 +320,21 @@ app.get('/update', function (req, res) {
     var getQuery = url.parse(req.url).query;
     var id = querystring.parse(getQuery)['id'];
 
-    pool.getConnection(function (err, connection) {
-        if (err) throw err;
-        var sql = 'select * from note where id=?';
-        connection.query(sql, id, function (err, ret) {
-            if (err) {
-                console.log(err);
-                return res.redirect('/noteslist');
-            }
-            return res.render('update', {
-                user: req.session.user,
-                note: ret[0],
-                title: '修改笔记',
-                moment: moment
-            });
+    req.models.note.findOne({id:id}).exec(function (err, note) {
+        if (err) {
+            console.log(err);
+            return res.redirect('/noteslist');
+        }
+        console.log('----------' + note);
+        //note.createTime = moment(note.createTime).format("YYYY-MM-DD");
+        return res.render('update', {
+            user: req.session.user,
+            note: note,
+            title: '修改笔记',
+            moment: moment
         });
     });
-    //Note.findOne({_id: id}, function (err, note) {
-    //    if (err) {
-    //        console.log(err);
-    //        return res.redirect('/noteslist');
-    //    }
-    //    console.log('----------' + note);
-    //    //note.createTime = moment(note.createTime).format("YYYY-MM-DD");
-    //    return res.render('update', {
-    //        user: req.session.user,
-    //        note: note,
-    //        title: '修改笔记',
-    //        moment: moment
-    //    });
-    //});
+
 });
 
 app.post('/update', function (req, res) {
@@ -528,31 +343,19 @@ app.post('/update', function (req, res) {
         return res.redirect('/');
     }
 
-    pool.getConnection(function (err, connection) {
-        if (err) throw err;
-        var sql = 'update note set title=?,tag=?,content=?,createtime=NOW() where id=?';
-        var params = [req.body.title, req.body.tag, req.body.content,req.body.id];
-        var query = connection.query(sql, params, function (err, ret) {
-            if (err) {
-                console.log(err);
-            }
-            console.log('更新成功');
-            console.log(query.sql);
-            return res.redirect('/noteslist');
-        });
+    var values = {
+        title: req.body.title,
+        tag: req.body.tag,
+        content: req.body.content,
+        createTime: req.body.createTime
+    };
+    req.models.note.update({id:req.body.id},values).exec(function (err, note) {
+        if (err) {
+            console.log(err);
+        }
+        console.log('更新成功');
+        return res.redirect('/noteslist');
     });
-
-    //Note.update({_id: req.body.id}, {
-    //    $set: {title: req.body.title, tag: req.body.tag, content: req.body.content, createTime: req.body.createTime}
-    //}, function (err) {
-    //    if (err) {
-    //        console.log(err);
-    //    }
-    //    console.log('更新成功');
-    //    return res.redirect('/noteslist');
-    //
-    //});
-
 
 });
 
@@ -562,45 +365,35 @@ app.get('/noteslist', function (req, res) {
     if (req.session.user == null) {
         return res.redirect('/');
     }
-    pool.getConnection(function (err, connection) {
-        if (err) throw err;
-        var sql = 'select * from note where author=?';
-        connection.query(sql, req.session.user.username, function (err, ret) {
-            if (err) {
-                console.log(err);
-                connection.release();
-            }
-            console.log(ret);
-            connection.release();
-            return res.render('noteslist', {
-                user: req.session.user,
-                notes: ret,
-                title: '查看笔记列表',
-                moment: moment
-            });
+
+    req.models.note.find({author:req.session.user.username}).exec(function (err, notes) {
+        if (err) {
+            //req.session.notes = null;
+            console.log(err);
+            return res.redirect('/');
+        }
+        //req.session.notes = notes;
+        console.log(notes);
+        return res.render('noteslist', {
+            user: req.session.user,
+            notes: notes,
+            title: '查看笔记列表',
+            moment:moment
         });
     });
 
-    //Note.find({author:req.session.user.username}, function (err, notes) {
-    //    if (err) {
-    //        //req.session.notes = null;
-    //        console.log(err);
-    //        return res.redirect('/');
-    //    }
-    //    //req.session.notes = notes;
-    //    console.log(notes);
-    //    return res.render('noteslist', {
-    //        user: req.session.user,
-    //        notes: notes,
-    //        title: '查看笔记列表',
-    //        moment:moment
-    //    });
-    //});
 });
 
+waterline.orm.initialize(waterline.wlconfig, function (err, models) {
+    if (err) {
+        console.log('waterline initialize failed, err :', err);
+        return;
+    }
 
-//舰艇3000端口
-app.listen(3000, function (req, res) {
-    console.log('app is running at port 3000');
+    app.set('models', models.collections);
+
+    //监听3000端口
+    app.listen(3000, function (req, res) {
+        console.log('app is running at port 3000');
+    });
 });
-

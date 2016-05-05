@@ -1,30 +1,48 @@
 /**
  * Created by Nicholas_Wang on 2016/3/10.
  */;
-var mongoose = require('mongoose');
-var Schema = mongoose.Schema;
+var Waterline = require('waterline');
+var moment = require('moment');
 
-var userSchema = new Schema({
-    username: String,
-    password: String,
-    email: String,
-    createTime: {
-        type: Date,
-        default: Date.now
+var database = 'mongo';
+
+var User = Waterline.Collection.extend({
+    identity: 'user',
+    connection: database,
+    schema: true,
+    attributes: {
+        username: {
+            type: 'string',
+            required: true
+        },
+        password: {
+            type: 'string',
+            required:true
+        },
+        email: {type:'string'},
+        createTime: {
+            type: 'string',
+            defaultsTo: moment(Date.now()).locale('zh-cn').format('LL HH:mm:ss')
+        }
     }
 });
 
-var noteSchema = new Schema({
-    title: String,
-    author: String,
-    tag: String,
-    content: String,
-    createTime: {
-        type: Date,
-        default: Date.now
-
+var Note = Waterline.Collection.extend({
+    identity: 'note',
+    connection: database,
+    schema: true,
+    attributes: {
+        title: {type:'string'},
+        author: {type:'string'},
+        tag: {type:'string'},
+        content: {type:'text'},
+        createTime: {
+            type: 'string',
+            defaultsTo: moment(Date.now()).locale('zh-cn').format('LL HH:mm:ss')
+        }
     }
+
 });
 
-exports.User = mongoose.model('User', userSchema);
-exports.Note = mongoose.model('Note', noteSchema);
+exports.User = User;
+exports.Note = Note;
